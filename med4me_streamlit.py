@@ -9,17 +9,6 @@ from datetime import datetime
 import numpy as np
 from pathlib import Path
 
-
-# Password hashing functions (replacing werkzeug)
-def generate_password_hash(password):
-    """Hash a password using SHA-256"""
-    return hashlib.sha256(password.encode()).hexdigest()
-
-def check_password_hash(pwhash, password):
-    """Check if password matches hash"""
-    return pwhash == hashlib.sha256(password.encode()).hexdigest()
-
-
 # Page configuration
 st.set_page_config(
     page_title="Med4Me - Clinical Decision Support",
@@ -120,6 +109,15 @@ if 'patient_data' not in st.session_state:
 if 'step' not in st.session_state:
     st.session_state.step = 0
 
+# Password hashing functions
+def hash_password(password):
+    """Hash a password using SHA-256"""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def verify_password(password, hashed):
+    """Verify a password against its hash"""
+    return hash_password(password) == hashed
+
 # Database functions
 def init_db():
     """Initialize database tables"""
@@ -167,7 +165,7 @@ def init_db():
     try:
         cur.execute("SELECT * FROM user WHERE username = 'admin'")
         if not cur.fetchone():
-            password_hash = generate_password_hash('admin123')
+            password_hash = hash_password('admin123')
             cur.execute("INSERT INTO user (username, password_hash) VALUES (?, ?)", 
                        ('admin', password_hash))
     except:
@@ -210,7 +208,7 @@ def authenticate_user(username, password):
     result = cur.fetchone()
     conn.close()
     
-    if result and check_password_hash(result[1], password):
+    if result and verify_password(password, result[1]):
         return result[0]
     return None
 
@@ -219,7 +217,7 @@ def register_user(username, password):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     try:
-        password_hash = generate_password_hash(password)
+        password_hash = hash_password(password)
         cur.execute("INSERT INTO user (username, password_hash) VALUES (?, ?)", 
                    (username, password_hash))
         conn.commit()
@@ -403,7 +401,115 @@ def fallback_recommendation(symptoms, age, gender, genetic_history=None):
             "Follow-Up": "BP monitoring weekly initially, then monthly. Review medications every 3 months."
         })
     
-    # Add other conditions here (same as before)
+    # Asthma/Breathing problems
+    elif re.search(r"\basthma\b|\bwheezing\b|\bshortness.*breath\b|\bbreathe\b", s):
+        rec.update({
+            "Diagnosis": "Asthma / Reactive Airway Disease",
+            "Medicine": "- Salbutamol inhaler (2 puffs): PRN for symptoms\n- Budesonide inhaler 200 mcg: BD (controller)",
+            "Alternative": "- Montelukast 10 mg: Once daily at bedtime\n- Formoterol + Budesonide combination inhaler",
+            "Lifestyle": "Avoid triggers (dust, smoke, cold air), breathing exercises, maintain healthy weight, flu vaccination.",
+            "Red Flags": "Severe difficulty breathing, blue lips/fingers, unable to speak full sentences, chest tightness not relieved by inhaler.",
+            "Follow-Up": "Review in 2 weeks, peak flow monitoring, pulmonary function tests if persistent."
+        })
+    
+    # Gastritis/Acid reflux
+    elif re.search(r"\bgastric\b|\bacid\b|\bheart.*burn\b|\bindigestion\b|\bstomach.*pain\b|\bepigastric\b", s):
+        rec.update({
+            "Diagnosis": "Gastritis / Gastroesophageal Reflux Disease (GERD)",
+            "Medicine": "- Omeprazole 20 mg: Once daily before breakfast\n- Antacid (Magaldrate) syrup: 10 mL after meals",
+            "Alternative": "- Pantoprazole 40 mg OD\n- Ranitidine 150 mg BD\n- Sucralfate 1g QID",
+            "Lifestyle": "Small frequent meals, avoid spicy/fatty foods, no late meals (3 hrs before bed), elevate head while sleeping, avoid alcohol/smoking.",
+            "Red Flags": "Severe abdominal pain, vomiting blood, black tarry stools, weight loss, difficulty swallowing.",
+            "Follow-Up": "Review in 4 weeks. Consider endoscopy if symptoms persist or red flags present."
+        })
+    
+    # Allergic reactions
+    elif re.search(r"\ballerg\b|\brash\b|\bitch\b|\bhives\b|\burticaria\b", s):
+        rec.update({
+            "Diagnosis": "Allergic Reaction / Urticaria",
+            "Medicine": "- Cetirizine 10 mg: Once daily\n- Hydrocortisone cream 1%: Apply BD to affected areas\n- Avoid known allergens",
+            "Alternative": "- Loratadine 10 mg OD\n- Fexofenadine 120 mg OD (non-sedating)\n- Calamine lotion for local relief",
+            "Lifestyle": "Identify and avoid triggers, wear loose cotton clothing, avoid hot showers, keep skin moisturized.",
+            "Red Flags": "Difficulty breathing, swelling of face/throat/tongue, rapid pulse, dizziness, loss of consciousness (anaphylaxis).",
+            "Follow-Up": "Review in 1 week. Allergy testing if recurrent. Carry epinephrine auto-injector if severe allergies."
+        })
+    
+    # Arthritis/Joint pain
+    elif re.search(r"\barthritis\b|\bjoint.*pain\b|\bknee.*pain\b|\bback.*pain\b|\bosteo\b", s):
+        rec.update({
+            "Diagnosis": "Osteoarthritis / Degenerative Joint Disease",
+            "Medicine": "- Ibuprofen 400 mg: TDS after meals\n- Glucosamine 1500 mg + Chondroitin 1200 mg: Once daily\n- Topical diclofenac gel",
+            "Alternative": "- Naproxen 250 mg BD\n- Paracetamol 1g TDS\n- Hot/cold therapy\n- Capsaicin cream 0.025%",
+            "Lifestyle": "Weight reduction if overweight, low-impact exercises (swimming, cycling), physical therapy, avoid prolonged standing.",
+            "Red Flags": "Severe pain, joint swelling/warmth/redness, fever, inability to bear weight, deformity.",
+            "Follow-Up": "Review in 2 weeks. X-rays if severe. Consider physiotherapy referral."
+        })
+    
+    # Anxiety/Depression
+    elif re.search(r"\banxiety\b|\bdepression\b|\bstress\b|\bpanic\b|\bmental\b|\bsad\b|\bworr\b", s):
+        rec.update({
+            "Diagnosis": "Anxiety / Depression - Requires Mental Health Evaluation",
+            "Medicine": "- Escitalopram 10 mg: Once daily (after psychiatric evaluation)\n- Consider counseling/psychotherapy first",
+            "Alternative": "- Sertraline 50 mg OD\n- Cognitive Behavioral Therapy (CBT)\n- Mindfulness-based therapy",
+            "Lifestyle": "Regular exercise (30 min/day), adequate sleep (7-9 hrs), social support, relaxation techniques (meditation, yoga), limit caffeine/alcohol.",
+            "Red Flags": "Suicidal thoughts, self-harm, severe panic attacks, inability to perform daily activities, hallucinations.",
+            "Follow-Up": "Psychiatric referral recommended. Review in 1 week initially, then every 2-4 weeks."
+        })
+    
+    # Urinary Tract Infection
+    elif re.search(r"\buti\b|\burinary\b|\bburn.*urin\b|\bfrequent.*urin\b|\bdysuria\b", s):
+        rec.update({
+            "Diagnosis": "Urinary Tract Infection (UTI)",
+            "Medicine": "- Nitrofurantoin 100 mg: BD for 5 days\n- Increase fluid intake (2-3 liters/day)",
+            "Alternative": "- Trimethoprim 200 mg BD for 3 days\n- Ciprofloxacin 500 mg BD for 3 days\n- Cranberry supplements",
+            "Lifestyle": "Hydration (8-10 glasses water/day), urinate frequently, avoid holding urine, proper hygiene, cranberry juice.",
+            "Red Flags": "High fever, flank pain, blood in urine, nausea/vomiting, confusion (especially in elderly).",
+            "Follow-Up": "Review if symptoms persist after 48 hours. Urine culture if recurrent UTIs."
+        })
+    
+    # Thyroid disorders
+    elif re.search(r"\bthyroid\b|\bhypothyroid\b|\bhyperthyroid\b|\bfatigue\b|\bweight.*gain\b", s):
+        rec.update({
+            "Diagnosis": "Thyroid Disorder (Requires lab confirmation)",
+            "Medicine": "- Levothyroxine 50 mcg: Once daily (for hypothyroidism, after TSH confirmation)\n- Take on empty stomach",
+            "Alternative": "- Dosage adjustment based on TSH levels\n- Regular monitoring required",
+            "Lifestyle": "Regular medication timing, avoid soy/calcium supplements near medication time, balanced diet, regular exercise.",
+            "Red Flags": "Severe fatigue, rapid heart rate, tremors, significant weight changes, neck swelling.",
+            "Follow-Up": "TSH levels every 6-8 weeks initially, then every 6 months once stable."
+        })
+    
+    # Skin infections
+    elif re.search(r"\bskin.*infection\b|\bfungal\b|\bringworm\b|\beczema\b|\bdermatitis\b", s):
+        rec.update({
+            "Diagnosis": "Skin Infection / Dermatitis",
+            "Medicine": "- Clotrimazole cream 1%: Apply BD for fungal infections\n- Hydrocortisone cream 1%: BD for inflammation (max 7 days)",
+            "Alternative": "- Terbinafine cream 1% BD\n- Mupirocin ointment (if bacterial)\n- Calamine lotion for soothing",
+            "Lifestyle": "Keep area clean and dry, avoid tight clothing, change clothes daily, avoid sharing towels.",
+            "Red Flags": "Spreading infection, fever, pus discharge, severe pain, no improvement in 1 week.",
+            "Follow-Up": "Review in 1 week if no improvement. Skin scraping/culture if persistent."
+        })
+    
+    # Anemia
+    elif re.search(r"\banemia\b|\banemic\b|\blow.*iron\b|\bfatigue\b|\bpale\b|\bdizz\b", s):
+        rec.update({
+            "Diagnosis": "Iron Deficiency Anemia (Requires lab confirmation)",
+            "Medicine": "- Ferrous sulfate 325 mg: Once daily with vitamin C\n- Take on empty stomach or with orange juice",
+            "Alternative": "- Ferrous gluconate 300 mg OD (if GI side effects)\n- Iron polymaltose complex\n- Vitamin B12 if deficient",
+            "Lifestyle": "Iron-rich foods (red meat, spinach, lentils, fortified cereals), vitamin C with meals (enhances absorption), avoid tea/coffee with meals.",
+            "Red Flags": "Severe fatigue, chest pain, shortness of breath, rapid heartbeat, severe dizziness, blood in stool.",
+            "Follow-Up": "Hemoglobin check in 4-6 weeks. Continue iron for 3-6 months to replenish stores."
+        })
+    
+    # Insomnia/Sleep disorders
+    elif re.search(r"\binsomnia\b|\bsleep\b|\bcan't.*sleep\b|\bawake\b", s):
+        rec.update({
+            "Diagnosis": "Insomnia / Sleep Disorder",
+            "Medicine": "- Melatonin 3 mg: 30 minutes before bedtime\n- Short-term: Zolpidem 5 mg (if severe, max 2 weeks)",
+            "Alternative": "- Diphenhydramine 25 mg at bedtime\n- Trazodone 50 mg (if depression present)\n- CBT for insomnia (CBT-I)",
+            "Lifestyle": "Sleep hygiene: regular sleep schedule, dark/cool room, avoid screens 1 hr before bed, no caffeine after 2 PM, relaxation techniques.",
+            "Red Flags": "Sleep apnea symptoms (snoring, gasping), severe daytime impairment, depression with insomnia.",
+            "Follow-Up": "Review in 2 weeks. Sleep study if suspected sleep apnea."
+        })
     
     return rec
 
@@ -482,7 +588,7 @@ def main():
         return
     
     # Main application
-    st.title(f"🩺 Med4Me - Doctor Portal")
+    st.title(f"🩺 Med4Me - Doctor Chat")
     st.caption(f"Logged in as **{st.session_state.username}**")
     
     # Sidebar - Patient list
@@ -511,7 +617,7 @@ def main():
                 is_selected = st.session_state.current_patient == patient_id
                 
                 if st.button(
-                    f"**{patient_id}**\n{visit_count} visits\nLast: {last_visit[:10] if last_visit else 'N/A'}",
+                    f"**{patient_id}**\nVisits: {visit_count}\nLast: {last_visit[:10] if last_visit else 'N/A'}",
                     key=patient_id,
                     use_container_width=True,
                     type="primary" if is_selected else "secondary"
@@ -523,6 +629,7 @@ def main():
             st.info("No patients yet")
         
         st.divider()
+        st.caption("Your patients are scoped to your account")
         
         if st.button("🚪 Logout", use_container_width=True):
             st.session_state.clear()
@@ -544,7 +651,7 @@ def main():
             with st.expander("📋 Past Visits", expanded=False):
                 for visit in history:
                     st.markdown(f"""
-                    **Visit Date:** {visit[3][:19]}  
+                    **Visit Date:** {visit[3]}  
                     **Symptoms:** {visit[4]}  
                     **Diagnosis:** {visit[9]}  
                     **Medicine:** {visit[8][:100]}...
@@ -560,7 +667,7 @@ def main():
                 'genetic_history': last_visit[7] or "Not provided"
             }
             
-            st.info(f"Age: {last_visit[5]} | Gender: {last_visit[6]} | History: {last_visit[7] or 'None'}")
+            st.info(f"Age: {last_visit[5]} | Gender: {last_visit[6]} | Genetic History: {last_visit[7] or 'Not provided'}")
             
             # Only ask for symptoms
             with st.form("symptoms_form"):
@@ -649,14 +756,14 @@ def show_recommendation(rec):
     st.markdown(f"""
     <div class="rec-section">
     <strong>💊 Medication:</strong><br/>
-    {rec.get('Medicine', 'N/A').replace(chr(10), '<br/>')}
+    {rec.get('Medicine', 'N/A').replace('- ', '<br/>- ')}
     </div>
     """, unsafe_allow_html=True)
     
     st.markdown(f"""
     <div class="rec-section">
     <strong>🔄 Alternative Medication:</strong><br/>
-    {rec.get('Alternative', 'N/A').replace(chr(10), '<br/>')}
+    {rec.get('Alternative', 'N/A').replace('- ', '<br/>- ')}
     </div>
     """, unsafe_allow_html=True)
     
